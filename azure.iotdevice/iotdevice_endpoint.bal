@@ -18,9 +18,97 @@ import ballerina/crypto;
 import ballerina/http;
 import ballerina/time;
 
+// Endpoint
+public type Client object {
+
+    // Data structure that will hold config info and a connector
+    public {
+        DeviceConfiguration deviceConfig = {};
+        DeviceConnector deviceConnector = new;
+    }
+
+    public function init (DeviceConfiguration deviceConfig);
+    public function getCallerActions() returns DeviceConnector;
+
+};
+
+// Connector
+public type DeviceConnector object {
+
+    public {
+        string resourceUri;
+        string signingKey;
+        string policyName;
+        int expiryInSeconds;
+        string token;
+
+        http:Client clientEndpoint = new;
+    }
+
+    public function send (string deviceId, json message) returns boolean;
+
+};
+
+// Part of the DeviceClient object and passed as an input parameter to
+// the connector when it is instantiated
+public type DeviceConfiguration {
+
+    string resourceUri;
+    string signingKey;
+    string policyName;
+    int expiryInSeconds = 3600;
+
+    // This type is a record defined in the http system library
+    http:ClientEndpointConfig clientConfig = {};
+
+};
+
 // Constants
 @final string UTF_8 = "UTF-8";
 @final string ISO_8859_1 = "ISO-8859-1";
+
+// =========== Implementation of the Endpoint
+public function Client::init (DeviceConfiguration deviceConfig) {
+    self.deviceConnector.resourceUri = deviceConfig.resourceUri;
+    self.deviceConnector.signingKey = deviceConfig.signingKey;
+    self.deviceConnector.policyName = deviceConfig.policyName;
+    self.deviceConnector.expiryInSeconds = deviceConfig.expiryInSeconds;
+
+    self.deviceConnector.token = generateSasToken(
+        self.deviceConnector.resourceUri, self.deviceConnector.signingKey, self.deviceConnector.policyName, self.deviceConnector.expiryInSeconds
+    );
+
+    self.deviceConnector.clientEndpoint.init(deviceConfig.clientConfig);
+}
+
+public function Client::getCallerActions () returns DeviceConnector {
+    return self.deviceConnector;
+}
+// =========== End of implementation of the Endpoint
+
+// =========== Implementation for Connector
+public function DeviceConnector::send (string deviceId, json message) returns boolean {
+    endpoint http:Client clientEndpoint = self.clientEndpoint;
+
+    http:Request request = new;
+    request.addHeader("authorization", self.token);
+    request.setJsonPayload(message);
+
+    boolean result = false;
+
+    var httpResponse = clientEndpoint->post("/devices/" + deviceId + "/messages/events?api-version=2018-04-01", request);
+    match httpResponse {
+        error err => {
+            result = false;
+        }
+        http:Response response => {
+            result = (response.statusCode == 204);
+        }
+    }
+
+    return result;
+}
+// =========== End of implementation for Connector
 
 // Utility functions
 function generateSasToken(string resourceUri, string signingKey, string policyName, int expiryInSeconds) returns string {
