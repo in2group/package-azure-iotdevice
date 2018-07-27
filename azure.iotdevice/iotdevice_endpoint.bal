@@ -14,9 +14,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/crypto;
 import ballerina/http;
 import ballerina/time;
+import in2/crypto;
 
 // Endpoint
 public type Client object {
@@ -59,7 +59,6 @@ public type DeviceConfiguration record {
 
 // Constants
 @final string UTF_8 = "UTF-8";
-@final string ISO_8859_1 = "ISO-8859-1";
 
 // =========== Implementation of the Endpoint
 function Client::init (DeviceConfiguration deviceConfig) {
@@ -110,10 +109,9 @@ function generateSasToken(string resourceUri, string signingKey, string policyNa
     time = time.addDuration(0, 0, 0, 0, 0, expiryInSeconds, 0);
     string expiry = <string> (time.time / 1000);
 
-    string signingKeyDecoded = check signingKey.base64Decode(charset = ISO_8859_1);
     string resourceUriEncoded = check http:encode(resourceUri, UTF_8);
     string stringToSign = resourceUriEncoded + "\n" + expiry;
-    string hmacResult = crypto:hmac(stringToSign, signingKeyDecoded, crypto:SHA256);
+    string hmacResult = crypto:hmac(stringToSign, signingKey, crypto:SHA256, keyType = crypto:BASE64);
     string signature = hmacResult.base16ToBase64Encode();
     string signatureEncoded = check http:encode(signature, UTF_8);
 
