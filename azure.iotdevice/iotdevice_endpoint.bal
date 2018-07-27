@@ -33,14 +33,16 @@ public type Client object {
 // Connector
 public type DeviceConnector object {
 
-    public string resourceUri;
-    public string signingKey;
+    public string hostName;
+    public string deviceId;
+    public string sharedAccessKey;
     public string policyName;
     public int expiryInSeconds;
     public string token;
+
     public http:Client clientEndpoint = new;
 
-    public function send (string deviceId, json message, boolean batch = false) returns boolean;
+    public function send (json message, boolean batch = false) returns boolean;
 
 };
 
@@ -48,9 +50,7 @@ public type DeviceConnector object {
 // the connector when it is instantiated
 public type DeviceConfiguration record {
 
-    string resourceUri;
-    string signingKey;
-    string policyName;
+    string connectionString;
     int expiryInSeconds = 3600;
 
     // This type is a record defined in the http system library
@@ -64,15 +64,29 @@ public type DeviceConfiguration record {
 
 // =========== Implementation of the Endpoint
 function Client::init (DeviceConfiguration deviceConfig) {
-    self.deviceConnector.resourceUri = deviceConfig.resourceUri;
-    self.deviceConnector.signingKey = deviceConfig.signingKey;
-    self.deviceConnector.policyName = deviceConfig.policyName;
+    var splitted = deviceConfig.connectionString
+        .replace("HostName=","")
+        .replace("DeviceId=","")
+        .replace("SharedAccessKey=","")
+        .split(";");
+
+    if (lengthof splitted != 3) {
+        error err = {
+            message: "Connection string should be in format HostName=<...>;DeviceId=<...>;SharedAccessKey=<...>"
+        };
+        throw err;
+    }
+
+    self.deviceConnector.hostName = splitted[0];
+    self.deviceConnector.deviceId = splitted[1];
+    self.deviceConnector.sharedAccessKey = splitted[2];
     self.deviceConnector.expiryInSeconds = deviceConfig.expiryInSeconds;
 
     self.deviceConnector.token = createSasToken(
-        self.deviceConnector.resourceUri, self.deviceConnector.signingKey, self.deviceConnector.policyName, self.deviceConnector.expiryInSeconds
+        self.deviceConnector.hostName, self.deviceConnector.sharedAccessKey, self.deviceConnector.policyName, self.deviceConnector.expiryInSeconds
     );
 
+    deviceConfig.clientConfig.url = string `https://{{self.deviceConnector.hostName}}`;
     self.deviceConnector.clientEndpoint.init(deviceConfig.clientConfig);
 }
 
@@ -82,7 +96,7 @@ function Client::getCallerActions () returns DeviceConnector {
 // =========== End of implementation of the Endpoint
 
 // =========== Implementation for Connector
-function DeviceConnector::send (string deviceId, json message, boolean batch = false) returns boolean {
+function DeviceConnector::send (json message, boolean batch = false) returns boolean {
     endpoint http:Client clientEndpoint = self.clientEndpoint;
 
     http:Request request = new;
@@ -96,7 +110,7 @@ function DeviceConnector::send (string deviceId, json message, boolean batch = f
 
     boolean result = false;
 
-    var httpResponse = clientEndpoint->post("/devices/" + deviceId + "/messages/events?api-version=2018-06-30", request);
+    var httpResponse = clientEndpoint->post("/devices/" + self.deviceId + "/messages/events?api-version=2018-06-30", request);
     match httpResponse {
         error err => {
             result = false;
