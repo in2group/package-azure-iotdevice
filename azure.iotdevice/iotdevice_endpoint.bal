@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/http;
+import ballerina/system;
 import ballerina/time;
 import in2/crypto;
 
@@ -39,7 +40,7 @@ public type DeviceConnector object {
     public string token;
     public http:Client clientEndpoint = new;
 
-    public function send (string deviceId, json message) returns boolean;
+    public function send (string deviceId, json message, boolean batch = false) returns boolean;
 
 };
 
@@ -59,6 +60,7 @@ public type DeviceConfiguration record {
 
 // Constants
 @final string UTF_8 = "UTF-8";
+@final string BATCH_MESSAGE_CONTENT_TYPE = "application/vnd.microsoft.iothub.json";
 
 // =========== Implementation of the Endpoint
 function Client::init (DeviceConfiguration deviceConfig) {
@@ -67,7 +69,7 @@ function Client::init (DeviceConfiguration deviceConfig) {
     self.deviceConnector.policyName = deviceConfig.policyName;
     self.deviceConnector.expiryInSeconds = deviceConfig.expiryInSeconds;
 
-    self.deviceConnector.token = generateSasToken(
+    self.deviceConnector.token = createSasToken(
         self.deviceConnector.resourceUri, self.deviceConnector.signingKey, self.deviceConnector.policyName, self.deviceConnector.expiryInSeconds
     );
 
@@ -80,12 +82,17 @@ function Client::getCallerActions () returns DeviceConnector {
 // =========== End of implementation of the Endpoint
 
 // =========== Implementation for Connector
-function DeviceConnector::send (string deviceId, json message) returns boolean {
+function DeviceConnector::send (string deviceId, json message, boolean batch = false) returns boolean {
     endpoint http:Client clientEndpoint = self.clientEndpoint;
 
     http:Request request = new;
+    if (batch && lengthof message != -1) {
+        request.setJsonPayload(createBatchMessage(message));
+        request.setContentType(BATCH_MESSAGE_CONTENT_TYPE);
+    } else {
+        request.setJsonPayload(createSingleMessage(message));
+    }
     request.addHeader("authorization", self.token);
-    request.setJsonPayload(message);
 
     boolean result = false;
 
@@ -104,7 +111,7 @@ function DeviceConnector::send (string deviceId, json message) returns boolean {
 // =========== End of implementation for Connector
 
 // Utility functions
-function generateSasToken(string resourceUri, string signingKey, string policyName, int expiryInSeconds) returns string {
+function createSasToken(string resourceUri, string signingKey, string policyName, int expiryInSeconds) returns string {
     time:Time time = time:currentTime();
     time = time.addDuration(0, 0, 0, 0, 0, expiryInSeconds, 0);
     string expiry = <string> (time.time / 1000);
@@ -121,4 +128,40 @@ function generateSasToken(string resourceUri, string signingKey, string policyNa
     }
 
     return token;
+}
+
+function createSingleMessage(json message) returns json {
+    string correlationId = system:uuid();
+    return {
+        body: message,
+        base64Encoded: false,
+        properties: {
+            "iothub-correlationid": correlationId,
+            "iothub-messageid": correlationId,
+            "iothub-app-temeraturealert": false
+        }
+    };
+}
+
+function createBatchMessage(json message) returns json {
+    json result = [];
+    string correlationId = system:uuid();
+
+    foreach index, element in check <json[]> message {
+        result[index] = createBatchElement(correlationId, element);
+    }
+
+    return result;
+}
+
+function createBatchElement(string correlationId, json message) returns json {
+    return {
+        body: check message.toString().base64Encode(),
+        base64Encoded: true,
+        properties: {
+            "iothub-correlationid": correlationId,
+            "iothub-messageid": system:uuid(),
+            "iothub-app-temeraturealert": false
+        }
+    };
 }
