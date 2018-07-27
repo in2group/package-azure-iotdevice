@@ -22,10 +22,7 @@ import ballerina/time;
 public type Client object {
 
     // Data structure that will hold config info and a connector
-    public {
-        DeviceConfiguration deviceConfig = {};
-        DeviceConnector deviceConnector = new;
-    }
+    public DeviceConnector deviceConnector = new;
 
     public function init (DeviceConfiguration deviceConfig);
     public function getCallerActions() returns DeviceConnector;
@@ -35,15 +32,12 @@ public type Client object {
 // Connector
 public type DeviceConnector object {
 
-    public {
-        string resourceUri;
-        string signingKey;
-        string policyName;
-        int expiryInSeconds;
-        string token;
-
-        http:Client clientEndpoint = new;
-    }
+    public string resourceUri;
+    public string signingKey;
+    public string policyName;
+    public int expiryInSeconds;
+    public string token;
+    public http:Client clientEndpoint = new;
 
     public function send (string deviceId, json message) returns boolean;
 
@@ -51,7 +45,7 @@ public type DeviceConnector object {
 
 // Part of the DeviceClient object and passed as an input parameter to
 // the connector when it is instantiated
-public type DeviceConfiguration {
+public type DeviceConfiguration record {
 
     string resourceUri;
     string signingKey;
@@ -68,7 +62,7 @@ public type DeviceConfiguration {
 @final string ISO_8859_1 = "ISO-8859-1";
 
 // =========== Implementation of the Endpoint
-public function Client::init (DeviceConfiguration deviceConfig) {
+function Client::init (DeviceConfiguration deviceConfig) {
     self.deviceConnector.resourceUri = deviceConfig.resourceUri;
     self.deviceConnector.signingKey = deviceConfig.signingKey;
     self.deviceConnector.policyName = deviceConfig.policyName;
@@ -81,13 +75,13 @@ public function Client::init (DeviceConfiguration deviceConfig) {
     self.deviceConnector.clientEndpoint.init(deviceConfig.clientConfig);
 }
 
-public function Client::getCallerActions () returns DeviceConnector {
+function Client::getCallerActions () returns DeviceConnector {
     return self.deviceConnector;
 }
 // =========== End of implementation of the Endpoint
 
 // =========== Implementation for Connector
-public function DeviceConnector::send (string deviceId, json message) returns boolean {
+function DeviceConnector::send (string deviceId, json message) returns boolean {
     endpoint http:Client clientEndpoint = self.clientEndpoint;
 
     http:Request request = new;
@@ -96,7 +90,7 @@ public function DeviceConnector::send (string deviceId, json message) returns bo
 
     boolean result = false;
 
-    var httpResponse = clientEndpoint->post("/devices/" + deviceId + "/messages/events?api-version=2018-04-01", request);
+    var httpResponse = clientEndpoint->post("/devices/" + deviceId + "/messages/events?api-version=2018-06-30", request);
     match httpResponse {
         error err => {
             result = false;
