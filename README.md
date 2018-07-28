@@ -1,6 +1,6 @@
 # Ballerina Azure IoT Device Connector
 
-Ballerina Azure IoT Device Connector is used to connect Ballerina with Azure IoT Hub. With the Azure IoT Device Connector Ballerina can act as an IoT Device using HTTPS protocol.
+Ballerina Azure IoT Device Connector is used to connect Ballerina with Azure IoT Hub. With the Azure IoT Device Connector Ballerina can act as an IoT Device over HTTPS.
 
 Sending single device message from Ballerina:
 
@@ -39,4 +39,4 @@ function main(string[] args) {
 }
 ```
 
-For more IoT Device Connector configuration samples please refer to the samples directory.
+** This package uses Ballerina crypto extension for generating HMAC values using Base64 encoded keys (https://github.com/in2group/package-crypto).
