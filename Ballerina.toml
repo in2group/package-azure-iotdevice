@@ -1,8 +1,8 @@
 [project]
 org-name = "in2"
-version = "0.0.3"
+version = "0.0.4"
 description = "Ballerina Azure IoT Device Connector"
 license = "Apache-2.0"
-authors = ["mkasovic"]
+authors = ["IN2"]
 repository = "https://github.com/in2group/package-azure-iotdevice.git"
 keywords = ["azure","iot"]
