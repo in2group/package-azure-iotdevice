@@ -8,7 +8,7 @@ Sending single device message from Ballerina:
 import ballerina/io;
 import in2/azure.iotdevice as iot;
 
-function main(string[] args) {
+function main(string... args) {
   endpoint iot:Client deviceEndpoint {
     connectionString: "HostName=<...>;DeviceId=<...>;SharedAccessKey=<...>"
   }
@@ -24,7 +24,7 @@ Sending multiple device messages in batch from Ballerina:
 import ballerina/io;
 import in2/azure.iotdevice as iot;
 
-function main(string[] args) {
+function main(string... args) {
   endpoint iot:Client deviceEndpoint {
     connectionString: "HostName=<...>;DeviceId=<...>;SharedAccessKey=<...>"
   }
@@ -35,7 +35,10 @@ function main(string[] args) {
   ];
 
   var result = deviceEndpoint->send(messages, batch = true);
-  io:println(result);
+  match result {
+        int count => io:println("messages sent: " + count);
+        error err => io:println("error occured: " + err.message);
+    }
 }
 ```
 
