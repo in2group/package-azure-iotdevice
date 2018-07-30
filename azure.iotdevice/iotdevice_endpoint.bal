@@ -18,6 +18,7 @@ import ballerina/http;
 import ballerina/system;
 import ballerina/time;
 import in2/crypto;
+import ballerina/io;
 
 // Endpoint
 public type Client object {
@@ -42,7 +43,7 @@ public type DeviceConnector object {
 
     public http:Client clientEndpoint = new;
 
-    public function send (json message, boolean batch = false) returns boolean;
+    public function send (json message, boolean batch = false) returns (int|error);
 
 };
 
@@ -61,6 +62,16 @@ public type DeviceConfiguration record {
 // Constants
 @final string UTF_8 = "UTF-8";
 @final string BATCH_MESSAGE_CONTENT_TYPE = "application/vnd.microsoft.iothub.json";
+
+@final map<string> IOT_HUB_ERROR_CODES = {
+    "400": "The body of the request is not valid; for example, it cannot be parsed, or the object cannot be validated.",
+    "401": "The authorization token cannot be validated; for example, it is expired or does not apply to the request’s URI and/or method.",
+    "404": "The IoT Hub instance or a device identity does not exist.",
+    "403": "The maximum number of device identities has been reached.",
+    "412": "The etag in the request does not match the etag of the existing resource, as per RFC7232.",
+    "429": "This IoT Hub’s identity registry operations are being throttled by the service. For more information, see IoT Hub Developer Guide – Throttling for more information. An exponential back-off strategy is recommended.",
+    "500": "An internal error occurred."
+};
 
 // =========== Implementation of the Endpoint
 function Client::init (DeviceConfiguration deviceConfig) {
@@ -96,31 +107,38 @@ function Client::getCallerActions () returns DeviceConnector {
 // =========== End of implementation of the Endpoint
 
 // =========== Implementation for Connector
-function DeviceConnector::send (json message, boolean batch = false) returns boolean {
+function DeviceConnector::send (json message, boolean batch = false) returns (int|error) {
     endpoint http:Client clientEndpoint = self.clientEndpoint;
-
+    int messageCount = 0;
     http:Request request = new;
+
     if (batch && lengthof message != -1) {
+        messageCount = lengthof message;
         request.setJsonPayload(createBatchMessage(message));
         request.setContentType(BATCH_MESSAGE_CONTENT_TYPE);
     } else {
+        messageCount = 1;
         request.setJsonPayload(createSingleMessage(message));
     }
     request.addHeader("authorization", self.token);
 
-    boolean result = false;
-
     var httpResponse = clientEndpoint->post("/devices/" + self.deviceId + "/messages/events?api-version=2018-06-30", request);
     match httpResponse {
         error err => {
-            result = false;
+            return err;
         }
         http:Response response => {
-            result = (response.statusCode == 204);
+            if (response.statusCode == 204) {
+                return messageCount;
+            } else {
+                string statusCode = <string> response.statusCode;
+                error err = {
+                    message: statusCode + " " + (IOT_HUB_ERROR_CODES[statusCode] ?: "Unknown error occured.")
+                };
+                return err;
+            }
         }
     }
-
-    return result;
 }
 // =========== End of implementation for Connector
 
