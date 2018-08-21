@@ -14,11 +14,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/crypto;
 import ballerina/http;
 import ballerina/system;
 import ballerina/time;
-import in2/crypto;
-import ballerina/io;
 
 // Endpoint
 public type Client object {
@@ -150,7 +149,7 @@ function createSasToken(string resourceUri, string signingKey, string policyName
 
     string resourceUriEncoded = check http:encode(resourceUri, UTF_8);
     string stringToSign = resourceUriEncoded + "\n" + expiry;
-    string hmacResult = crypto:hmac(stringToSign, signingKey, crypto:SHA256, keyType = crypto:BASE64);
+    string hmacResult = crypto:hmac(stringToSign, signingKey, crypto:SHA256, keyEncoding = "BASE64");
     string signature = hmacResult.base16ToBase64Encode();
     string signatureEncoded = check http:encode(signature, UTF_8);
 
