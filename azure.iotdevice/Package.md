@@ -38,5 +38,3 @@ function main(string[] args) {
   io:println(result);
 }
 ```
-
-** This package uses Ballerina crypto extension for generating HMAC values using Base64 encoded keys (https://github.com/in2group/package-crypto).
