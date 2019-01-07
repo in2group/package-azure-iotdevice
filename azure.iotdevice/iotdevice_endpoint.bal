@@ -19,50 +19,76 @@ import ballerina/http;
 import ballerina/system;
 import ballerina/time;
 
-// Endpoint
-public type Client object {
+# Azure IoT Hub Client object.
+#
+# + hostName - The IoT Hub hostname in format <iothub-name>.azure-devices.net
+# + deviceId - The name for the device
+# + sharedAccessKey - The access key for the device
+# + policyName - The access token of the Twitter account
+# + expiryInSeconds - The message expiry in seconds
+# + token - The generated access token for the device
+# + deviceClient - HTTP Client endpoint
+public type Client client object {
+    string hostName;
+    string deviceId;
+    string sharedAccessKey;
+    string policyName = "";
+    int expiryInSeconds;
+    string token;
 
-    // Data structure that will hold config info and a connector
-    public DeviceConnector deviceConnector = new;
+    http:Client deviceClient;
 
-    public function init (DeviceConfiguration deviceConfig);
-    public function getCallerActions() returns DeviceConnector;
+    public function __init(DeviceConfiguration deviceConfig) {
+        var splitted = deviceConfig.connectionString
+            .replace("HostName=","")
+            .replace("DeviceId=","")
+            .replace("SharedAccessKey=","")
+            .split(";");
 
+        if (splitted.length() != 3) {
+            error err = error("Connection string should be in format HostName=<Host Name>;SharedAccessKeyName=<Key Name>;SharedAccessKey=<SAS Key>");
+            panic err;
+        }
+
+        self.hostName = splitted[0];
+        self.deviceId = splitted[1];
+        self.sharedAccessKey = splitted[2];
+        self.expiryInSeconds = deviceConfig.expiryInSeconds;
+
+        self.token = check createSasToken(
+            self.hostName, self.sharedAccessKey, self.policyName, self.expiryInSeconds
+        );
+
+        self.deviceClient = new(
+            string `https://{{self.hostName}}`,
+            config = deviceConfig.clientConfig
+        );
+    }
+
+    # Send the message to Azure IoT Hub.
+    #
+    # + message - The message to be sent
+    # + batch - Indicator if message should be sent in batch
+    # + return - If success, returns number of messages sent, else returns error
+    public remote function send (json message, boolean batch = false) returns int|error;
 };
 
-// Connector
-public type DeviceConnector object {
-
-    public string hostName;
-    public string deviceId;
-    public string sharedAccessKey;
-    public string policyName;
-    public int expiryInSeconds;
-    public string token;
-
-    public http:Client clientEndpoint = new;
-
-    public function send (json message, boolean batch = false) returns (int|error);
-
-};
-
-// Part of the DeviceClient object and passed as an input parameter to
-// the connector when it is instantiated
+# Azure IoT Hub Connector configurations can be setup here.
+#
+# + connectionString - The connection string for Azure Iot Hub in format HostName=<Host Name>;SharedAccessKeyName=<Key Name>;SharedAccessKey=<SAS Key>
+# + expiryInSeconds - The message expiry in seconds
+# + clientConfig - Client endpoint configurations provided by the user
 public type DeviceConfiguration record {
-
     string connectionString;
     int expiryInSeconds = 3600;
-
-    // This type is a record defined in the http system library
     http:ClientEndpointConfig clientConfig = {};
-
 };
 
 // Constants
-@final string UTF_8 = "UTF-8";
-@final string BATCH_MESSAGE_CONTENT_TYPE = "application/vnd.microsoft.iothub.json";
+final string UTF_8 = "UTF-8";
+final string BATCH_MESSAGE_CONTENT_TYPE = "application/vnd.microsoft.iothub.json";
 
-@final map<string> IOT_HUB_ERROR_CODES = {
+final map<string> IOT_HUB_ERROR_CODES = {
     "400": "The body of the request is not valid; for example, it cannot be parsed, or the object cannot be validated.",
     "401": "The authorization token cannot be validated; for example, it is expired or does not apply to the request’s URI and/or method.",
     "404": "The IoT Hub instance or a device identity does not exist.",
@@ -72,77 +98,39 @@ public type DeviceConfiguration record {
     "500": "An internal error occurred."
 };
 
-// =========== Implementation of the Endpoint
-function Client::init (DeviceConfiguration deviceConfig) {
-    var splitted = deviceConfig.connectionString
-        .replace("HostName=","")
-        .replace("DeviceId=","")
-        .replace("SharedAccessKey=","")
-        .split(";");
-
-    if (lengthof splitted != 3) {
-        error err = {
-            message: "Connection string should be in format HostName=<...>;DeviceId=<...>;SharedAccessKey=<...>"
-        };
-        throw err;
-    }
-
-    self.deviceConnector.hostName = splitted[0];
-    self.deviceConnector.deviceId = splitted[1];
-    self.deviceConnector.sharedAccessKey = splitted[2];
-    self.deviceConnector.expiryInSeconds = deviceConfig.expiryInSeconds;
-
-    self.deviceConnector.token = createSasToken(
-        self.deviceConnector.hostName, self.deviceConnector.sharedAccessKey, self.deviceConnector.policyName, self.deviceConnector.expiryInSeconds
-    );
-
-    deviceConfig.clientConfig.url = string `https://{{self.deviceConnector.hostName}}`;
-    self.deviceConnector.clientEndpoint.init(deviceConfig.clientConfig);
-}
-
-function Client::getCallerActions () returns DeviceConnector {
-    return self.deviceConnector;
-}
-// =========== End of implementation of the Endpoint
-
 // =========== Implementation for Connector
-function DeviceConnector::send (json message, boolean batch = false) returns (int|error) {
-    endpoint http:Client clientEndpoint = self.clientEndpoint;
+remote function Client.send (json message, boolean batch = false) returns int|error {
+    http:Client deviceClient = self.deviceClient;
     int messageCount = 0;
     http:Request request = new;
 
-    if (batch && lengthof message != -1) {
-        messageCount = lengthof message;
-        request.setJsonPayload(createBatchMessage(message));
-        request.setContentType(BATCH_MESSAGE_CONTENT_TYPE);
+    if (batch && message.length() != -1) {
+        messageCount = message.length();
+        request.setJsonPayload(check createBatchMessage(message));
+        check request.setContentType(BATCH_MESSAGE_CONTENT_TYPE);
     } else {
         messageCount = 1;
         request.setJsonPayload(createSingleMessage(message));
     }
     request.addHeader("authorization", self.token);
 
-    var httpResponse = clientEndpoint->post("/devices/" + self.deviceId + "/messages/events?api-version=2018-06-30", request);
-    match httpResponse {
-        error err => {
+    var response = deviceClient->post("/devices/" + self.deviceId + "/messages/events?api-version=2018-06-30", request);
+    if (response is http:Response) {
+        if (response.statusCode == 204) {
+            return messageCount;
+        } else {
+            string statusCode = <string> response.statusCode;
+            error err = error(statusCode + " " + (IOT_HUB_ERROR_CODES[statusCode] ?: "Unknown error occured."));
             return err;
         }
-        http:Response response => {
-            if (response.statusCode == 204) {
-                return messageCount;
-            } else {
-                string statusCode = <string> response.statusCode;
-                error err = {
-                    message: statusCode + " " + (IOT_HUB_ERROR_CODES[statusCode] ?: "Unknown error occured.")
-                };
-                return err;
-            }
-        }
+    } else {
+        return response;
     }
 }
 // =========== End of implementation for Connector
 
 // Utility functions
-function createSasToken(string resourceUri, string signingKey, string policyName, int expiryInSeconds) returns string {
+function createSasToken(string resourceUri, string signingKey, string policyName, int expiryInSeconds) returns string|error {
     time:Time time = time:currentTime();
     time = time.addDuration(0, 0, 0, 0, 0, expiryInSeconds, 0);
     string expiry = <string> (time.time / 1000);
@@ -174,18 +162,22 @@ function createSingleMessage(json message) returns json {
     };
 }
 
-function createBatchMessage(json message) returns json {
+function createBatchMessage(json message) returns json|error {
     json result = [];
     string correlationId = system:uuid();
 
-    foreach index, element in check <json[]> message {
-        result[index] = createBatchElement(correlationId, element);
+    if (message is json[]) {
+        int index = 0;
+        foreach json element in message {
+            result[index] = check createBatchElement(correlationId, element);
+        }
+        index += 1;
     }
 
     return result;
 }
 
-function createBatchElement(string correlationId, json message) returns json {
+function createBatchElement(string correlationId, json message) returns json|error {
     return {
         body: check message.toString().base64Encode(),
         base64Encoded: true,
