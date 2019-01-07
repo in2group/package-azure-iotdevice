@@ -1,6 +1,6 @@
 Connects to Azure IoT Hub from Ballerina. 
 
-# Package Overview
+# Module Overview
 
 Ballerina Azure IoT Device Connector is used to connect Ballerina with Azure IoT Hub. With the Azure IoT Device Connector Ballerina can act as an IoT Device over HTTPS.
 
